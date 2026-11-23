@@ -32,6 +32,12 @@ functions:
   submitTask:
     handler: src/api/handler.lambda_handler
     reservedConcurrency: 2
+    events:
+      - httpApi:
+          path: /tasks
+          method: POST
+          authorizer:
+            type: aws_iam
 
 resources:
   Resources:
