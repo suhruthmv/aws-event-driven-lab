@@ -1,0 +1,47 @@
+
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  AWS Event-Driven Lab - Serverless task processing
+  infrastructure.
+
+Resources:
+
+  # Dead-letter queue for failed tasks
+  TaskDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Project
+          Value: aws-event-driven-lab
+
+  # Main task processing queue
+  TaskQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600
+      ReceiveMessageWaitTimeSeconds: 10
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt TaskDeadLetterQueue.Arn
+        maxReceiveCount: 5
+      Tags:
+        - Key: Project
+          Value: aws-event-driven-lab
+
+Outputs:
+
+  TaskQueueUrl:
+    Description: Main SQS queue URL
+    Value: !Ref TaskQueue
+
+  TaskQueueArn:
+    Description: Main SQS queue ARN
+    Value: !GetAtt TaskQueue.Arn
+
+  DeadLetterQueueArn:
+    Description: Failed task queue ARN
+    Value: !GetAtt TaskDeadLetterQueue.Arn
