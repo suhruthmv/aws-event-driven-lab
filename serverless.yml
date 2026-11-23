@@ -1,0 +1,62 @@
+
+service: aws-event-driven-lab
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: ap-south-1
+  stage: dev
+  architecture: arm64
+  memorySize: 128
+  timeout: 10
+  logRetentionInDays: 7
+
+  environment:
+    TASK_QUEUE_URL:
+      Ref: TaskQueue
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+          Resource:
+            Fn::GetAtt:
+              - TaskQueue
+              - Arn
+
+functions:
+  submitTask:
+    handler: src/api/handler.lambda_handler
+    reservedConcurrency: 2
+
+resources:
+  Resources:
+
+    TaskDeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        MessageRetentionPeriod: 1209600
+        SqsManagedSseEnabled: true
+
+    TaskQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        VisibilityTimeout: 60
+        MessageRetentionPeriod: 345600
+        ReceiveMessageWaitTimeSeconds: 10
+        SqsManagedSseEnabled: true
+        RedrivePolicy:
+          deadLetterTargetArn:
+            Fn::GetAtt:
+              - TaskDeadLetterQueue
+              - Arn
+          maxReceiveCount: 5
+
+  Outputs:
+    TaskQueueUrl:
+      Value:
+        Ref: TaskQueue
