@@ -5,6 +5,16 @@ Description: >
   AWS Event-Driven Lab - Serverless task processing
   infrastructure.
 
+Parameters:
+
+  LambdaCodeBucket:
+    Type: String
+    Description: S3 bucket holding the Lambda deployment ZIP
+
+  LambdaCodeKey:
+    Type: String
+    Description: S3 object key for the Lambda deployment ZIP
+
 Resources:
 
   # Dead-letter queue for failed tasks
@@ -32,6 +42,79 @@ Resources:
         - Key: Project
           Value: aws-event-driven-lab
 
+  # CloudWatch logs with seven-day retention
+  ApiLambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-submit-task"
+      RetentionInDays: 7
+
+  # Execution role for API Lambda
+  ApiLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+
+      Policies:
+        - PolicyName: TaskSubmissionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+
+              # Allow sending tasks only to our queue
+              - Sid: SendTaskMessages
+                Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt TaskQueue.Arn
+
+              # Allow writing only to this Lambda log group
+              - Sid: WriteLambdaLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ApiLambdaLogGroup.Arn
+
+  # Lambda for receiving API requests
+  ApiLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-submit-task"
+      Description: Validate and enqueue asynchronous tasks
+
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Architectures:
+        - arm64
+
+      MemorySize: 128
+      Timeout: 10
+      ReservedConcurrentExecutions: 2
+
+      Role: !GetAtt ApiLambdaExecutionRole.Arn
+
+      Code:
+        S3Bucket: !Ref LambdaCodeBucket
+        S3Key: !Ref LambdaCodeKey
+
+      Environment:
+        Variables:
+          TASK_QUEUE_URL: !Ref TaskQueue
+
+      LoggingConfig:
+        LogGroup: !Ref ApiLambdaLogGroup
+
+      Tags:
+        - Key: Project
+          Value: aws-event-driven-lab
+
 Outputs:
 
   TaskQueueUrl:
@@ -45,3 +128,7 @@ Outputs:
   DeadLetterQueueArn:
     Description: Failed task queue ARN
     Value: !GetAtt TaskDeadLetterQueue.Arn
+
+  ApiLambdaArn:
+    Description: Task submission Lambda ARN
+    Value: !GetAtt ApiLambdaFunction.Arn
